@@ -128,6 +128,7 @@ fn main() {
                         }
 
                         if status.status.success() {
+                            println!("{:?} {:?}", work.0, work.1);
                             std::fs::remove_file(work.0).unwrap();
                         } else {
                             eprintln!(
