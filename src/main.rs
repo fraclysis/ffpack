@@ -37,8 +37,8 @@ fn main() {
 
     if output.exists() {
         loop {
-            let file_name = output.file_name().unwrap_or_default().to_string_lossy();
-            let new_output = output.with_file_name(format!("{file_name}_{counter}"));
+            let file_name = output.file_stem().unwrap_or_default().to_string_lossy();
+            let new_output = output.with_file_name(format!("{file_name}_{counter}.txt"));
 
             counter += 1;
 
@@ -169,8 +169,8 @@ fn main() {
 
             if output.exists() || outputs.contains(&output) {
                 loop {
-                    let file_name = output.file_name().unwrap_or_default().to_string_lossy();
-                    let new_output = output.with_file_name(format!("{file_name}_{counter}"));
+                    let file_name = output.file_stem().unwrap_or_default().to_string_lossy();
+                    let new_output = output.with_file_name(format!("{file_name}_{counter}.webp"));
 
                     counter += 1;
 
