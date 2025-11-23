@@ -7,3 +7,6 @@ edition = "2024"
 clap = { version = "4.5.53", features = ["derive"] }
 ctrlc = "3.5.1"
 walkdir = "2.5.0"
+
+[target.'cfg(all(not(target_os = "hermit"), any(unix)))'.dependencies]
+nix = "0.30.1"
