@@ -60,12 +60,13 @@ fn main() {
                     let mut state = mutex.lock().unwrap();
 
                     loop {
-                        if state.jobs.len() != 0 {
-                            break;
+                        if state.cancel || (state.done && state.jobs.len() == 0) {
+                            println!("Thread quit!");
+                            return;
                         }
 
-                        if state.cancel || (state.done && state.jobs.len() == 0) {
-                            return;
+                        if state.jobs.len() != 0 {
+                            break;
                         }
 
                         state = cond.wait(state).unwrap();
@@ -75,13 +76,13 @@ fn main() {
                 }
 
                 if let Some(work) = work {
-                    if dry {
+                    if dry != 0 {
                         println!(
                             "ffmpeg -i {:?} -vcodec libwebp -qscale 80 {:?}",
                             work.0, work.1
                         );
 
-                        sleep(Duration::from_millis(1500));
+                        sleep(Duration::from_millis(dry as _));
                     } else {
                         let status = Command::new("ffmpeg")
                             .args([
@@ -113,7 +114,7 @@ fn main() {
 
     let mut outputs = HashSet::new();
 
-    for entry in WalkDir::new(cli.folder)
+    'outer: for entry in WalkDir::new(cli.folder)
         .into_iter()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_file())
@@ -126,7 +127,7 @@ fn main() {
 
         if exts.iter().any(|&e| e.eq_ignore_ascii_case(ext)) {
             if pair.0.lock().unwrap().cancel {
-                break;
+                break 'outer;
             }
 
             let (mutex, cond) = &*(pair);
@@ -160,6 +161,9 @@ fn main() {
         }
     }
 
+    println!("Done search!");
+    println!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
+
     pair.0.lock().unwrap().done = true;
     pair.1.notify_all();
 
@@ -167,7 +171,7 @@ fn main() {
         thread.join().unwrap();
     }
 
-    print!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
+    println!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
 }
 
 #[derive(Parser)]
@@ -180,6 +184,6 @@ struct Cli {
     #[arg(default_value_t = 4, short = 'j')]
     jobs: usize,
 
-    #[arg(default_value_t = true, short = 'd')]
-    dry: bool,
+    #[arg(default_value_t = 1000, short = 'd')]
+    dry: usize,
 }
