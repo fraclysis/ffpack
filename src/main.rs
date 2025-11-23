@@ -6,7 +6,8 @@ use std::{
     path::PathBuf,
     process::Command,
     sync::{Arc, Condvar, Mutex},
-    thread::available_parallelism,
+    thread::{available_parallelism, sleep},
+    time::Duration,
 };
 
 use clap::Parser;
@@ -15,6 +16,8 @@ use walkdir::WalkDir;
 #[derive(Default)]
 struct State {
     jobs: VecDeque<(PathBuf, PathBuf)>,
+    cancel: bool,
+    done: bool,
 }
 
 fn main() {
@@ -29,6 +32,17 @@ fn main() {
     let exts = ["png", "jpg", "jpeg", "bmp", "tiff", "gif"];
 
     let pair = Arc::new((Mutex::new(State::default()), Condvar::new()));
+
+    {
+        let pair = pair.clone();
+
+        ctrlc::set_handler(move || {
+            let (mutex, cond) = &*(pair);
+            mutex.lock().unwrap().cancel = true;
+            cond.notify_all();
+        })
+        .expect("Error setting Ctrl-C handler");
+    }
 
     let mut threads = Vec::with_capacity(core);
 
@@ -45,7 +59,15 @@ fn main() {
 
                     let mut state = mutex.lock().unwrap();
 
-                    while state.jobs.len() == 0 {
+                    loop {
+                        if state.jobs.len() != 0 {
+                            break;
+                        }
+
+                        if state.cancel || (state.done && state.jobs.len() == 0) {
+                            return;
+                        }
+
                         state = cond.wait(state).unwrap();
                     }
 
@@ -58,6 +80,8 @@ fn main() {
                             "ffmpeg -i {:?} -vcodec libwebp -qscale 80 {:?}",
                             work.0, work.1
                         );
+
+                        sleep(Duration::from_millis(1500));
                     } else {
                         let status = Command::new("ffmpeg")
                             .args([
@@ -101,7 +125,9 @@ fn main() {
         };
 
         if exts.iter().any(|&e| e.eq_ignore_ascii_case(ext)) {
-            println!("{}", path.display());
+            if pair.0.lock().unwrap().cancel {
+                break;
+            }
 
             let (mutex, cond) = &*(pair);
 
@@ -132,6 +158,13 @@ fn main() {
 
             cond.notify_all();
         }
+    }
+
+    pair.0.lock().unwrap().done = true;
+    pair.1.notify_all();
+
+    for thread in threads {
+        thread.join().unwrap();
     }
 }
 
