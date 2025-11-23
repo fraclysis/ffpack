@@ -166,6 +166,8 @@ fn main() {
     for thread in threads {
         thread.join().unwrap();
     }
+
+    print!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
 }
 
 #[derive(Parser)]
