@@ -1,6 +1,7 @@
 use std::{
     collections::{HashSet, VecDeque},
     ffi::OsStr,
+    fs::File,
     io::Write,
     num::NonZero,
     path::PathBuf,
@@ -31,13 +32,34 @@ fn main() {
 
     let exts = ["png", "jpg", "jpeg", "bmp", "tiff", "gif"];
 
-    let pair = Arc::new((Mutex::new(State::default()), Condvar::new()));
+    let mut counter = 0;
+    let mut output = PathBuf::from(cli.log);
+
+    if output.exists() {
+        loop {
+            let file_name = output.file_name().unwrap_or_default().to_string_lossy();
+            let new_output = output.with_file_name(format!("{file_name}_{counter}"));
+
+            counter += 1;
+
+            if !new_output.exists() {
+                output = new_output;
+                break;
+            }
+        }
+    }
+
+    let pair = Arc::new((
+        Mutex::new(State::default()),
+        Condvar::new(),
+        Mutex::new(File::create(output).unwrap()),
+    ));
 
     {
         let pair = pair.clone();
 
         ctrlc::set_handler(move || {
-            let (mutex, cond) = &*(pair);
+            let (mutex, cond, _) = &*(pair);
             mutex.lock().unwrap().cancel = true;
             cond.notify_all();
         })
@@ -55,7 +77,7 @@ fn main() {
                 let work;
 
                 {
-                    let (mutex, cond) = &*(pair);
+                    let (mutex, cond, _) = &*(pair);
 
                     let mut state = mutex.lock().unwrap();
 
@@ -86,6 +108,7 @@ fn main() {
                     } else {
                         let status = Command::new("ffmpeg")
                             .args([
+                                OsStr::new("-hide_banner"),
                                 OsStr::new("-n"),
                                 OsStr::new("-i"),
                                 work.0.as_os_str(),
@@ -98,11 +121,20 @@ fn main() {
                             .output()
                             .unwrap();
 
-                        std::io::stdout().write_all(&status.stdout).unwrap();
-                        std::io::stderr().write_all(&status.stderr).unwrap();
+                        {
+                            let mut file = pair.2.lock().unwrap();
+                            file.write_all(&status.stdout).unwrap();
+                            file.write_all(&status.stderr).unwrap();
+                        }
 
                         if status.status.success() {
-                            std::fs::remove_file(work.1).unwrap();
+                            std::fs::remove_file(work.0).unwrap();
+                        } else {
+                            eprintln!(
+                                "Failed: ffmpeg -i {:?} -vcodec libwebp -qscale 80 {:?}",
+                                work.0, work.1
+                            );
+                            std::io::stderr().write_all(&status.stderr).unwrap();
                         }
                     }
                 }
@@ -130,7 +162,7 @@ fn main() {
                 break 'outer;
             }
 
-            let (mutex, cond) = &*(pair);
+            let (mutex, cond, _) = &*(pair);
 
             let mut counter = 0;
             let mut output = path.with_extension("webp");
@@ -172,6 +204,8 @@ fn main() {
     }
 
     println!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
+
+    pair.2.lock().unwrap().flush().unwrap();
 }
 
 #[derive(Parser)]
@@ -186,4 +220,7 @@ struct Cli {
 
     #[arg(default_value_t = 1000, short = 'd')]
     dry: usize,
+
+    #[arg(default_value_t = String::from("ffpack.txt"), short = 'l')]
+    log: String,
 }
