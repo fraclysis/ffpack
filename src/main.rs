@@ -192,13 +192,15 @@ fn main() {
                         command.creation_flags(0x00000200);
 
                         #[cfg(all(not(target_os = "hermit"), any(unix)))]
-                        command.pre_exec(|| {
-                            // Ignore SIGINT in the child
-                            unsafe {
-                                signal(Signal::SIGINT, SigHandler::SigIgn).unwrap();
-                            }
-                            Ok(())
-                        });
+                        unsafe {
+                            command.pre_exec(|| {
+                                // Ignore SIGINT in the child
+                                unsafe {
+                                    signal(Signal::SIGINT, SigHandler::SigIgn).unwrap();
+                                }
+                                Ok(())
+                            })
+                        };
 
                         if video {
                             println!("Start {:?} {:?}", work.0, work.1);
