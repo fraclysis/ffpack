@@ -78,7 +78,7 @@ fn main() {
     let pair = Arc::new((
         Mutex::new(State::default()),
         Condvar::new(),
-        Mutex::new(File::create(output).unwrap()),
+        Mutex::new(File::create(&output).unwrap()),
     ));
 
     {
@@ -302,6 +302,12 @@ fn main() {
     println!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
 
     pair.2.lock().unwrap().flush().unwrap();
+
+    drop(pair);
+
+    if output.metadata().unwrap().len() == 0 {
+        std::fs::remove_file(output).unwrap();
+    }
 }
 
 #[derive(Parser)]
