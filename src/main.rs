@@ -1,7 +1,7 @@
 use std::{
     collections::{HashSet, VecDeque},
     ffi::OsStr,
-    fs::File,
+    fs::{self, File},
     io::Write,
     num::NonZero,
     path::PathBuf,
@@ -79,6 +79,7 @@ fn main() {
         Mutex::new(State::default()),
         Condvar::new(),
         Mutex::new(File::create(&output).unwrap()),
+        Mutex::new((0u64, 0u64)),
     ));
 
     {
@@ -86,7 +87,7 @@ fn main() {
 
         ctrlc::set_handler(move || {
             eprintln!("CONTROL C");
-            let (mutex, cond, _) = &*(pair);
+            let (mutex, cond, _, _) = &*(pair);
             mutex.lock().unwrap().cancel = true;
             cond.notify_all();
         })
@@ -115,7 +116,7 @@ fn main() {
                 let work;
 
                 {
-                    let (mutex, cond, _) = &*(pair);
+                    let (mutex, cond, _, _) = &*(pair);
 
                     let mut state = mutex.lock().unwrap();
 
@@ -147,6 +148,14 @@ fn main() {
                         OsStr::new("80"),
                         work.1.as_os_str(),
                     ];
+
+                    let input_size = {
+                        if let Ok(m) = fs::metadata(work.0.as_os_str()) {
+                            m.len()
+                        } else {
+                            0
+                        }
+                    };
 
                     let arg_video = [
                         OsStr::new("-hide_banner"),
@@ -223,8 +232,21 @@ fn main() {
                                 print!("End: ")
                             }
 
+                            let output_size = {
+                                if let Ok(m) = fs::metadata(work.1.as_os_str()) {
+                                    m.len()
+                                } else {
+                                    0
+                                }
+                            };
+
                             println!("{:?} {:?}", work.0, work.1);
                             std::fs::remove_file(work.0).unwrap();
+
+                            let mut t = pair.3.lock().unwrap();
+
+                            t.0 += input_size;
+                            t.1 += output_size;
                         } else {
                             eprintln!("Failed: {:?} {:?}", work.0, work.1);
                             std::io::stderr().write_all(&status.stderr).unwrap();
@@ -259,7 +281,7 @@ fn main() {
                 break 'outer;
             }
 
-            let (mutex, cond, _) = &*(pair);
+            let (mutex, cond, _, _) = &*(pair);
 
             let mut counter = 0;
             let mut output = path.with_extension(use_extension);
@@ -304,6 +326,28 @@ fn main() {
     println!("Jobs {} left", pair.0.lock().unwrap().jobs.len());
 
     pair.2.lock().unwrap().flush().unwrap();
+
+    let data = pair.3.lock().unwrap().clone();
+
+    fn format_bytes(bytes: u64) -> String {
+        const KB: u64 = 1024;
+        const MB: u64 = KB * 1024;
+        const GB: u64 = MB * 1024;
+
+        match bytes {
+            b if b >= GB => format!("{:.2} GiB", b as f64 / GB as f64),
+            b if b >= MB => format!("{:.2} MiB", b as f64 / MB as f64),
+            b if b >= KB => format!("{:.2} KiB", b as f64 / KB as f64),
+            b => format!("{} B", b),
+        }
+    }
+
+    println!(
+        "Input {}\nOutput {}\nDiff {}",
+        format_bytes(data.0),
+        format_bytes(data.1),
+        format_bytes(data.0 - data.1)
+    );
 
     drop(pair);
 
