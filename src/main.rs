@@ -1,7 +1,7 @@
 use std::{
     collections::{HashSet, VecDeque},
     ffi::OsStr,
-    fs::{self, File},
+    fs::{self, File, FileTimes, OpenOptions},
     io::Write,
     num::NonZero,
     path::PathBuf,
@@ -12,7 +12,7 @@ use std::{
 };
 
 #[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
+use std::os::windows::{fs::FileTimesExt, process::CommandExt};
 
 #[cfg(all(not(target_os = "hermit"), any(unix)))]
 use nix::sys::signal::{SigHandler, Signal, signal};
@@ -58,27 +58,33 @@ fn main() {
         img_exts.as_slice()
     };
 
-    let mut counter = 0;
-    let mut output = PathBuf::from(cli.log);
+    // let mut counter = 0;
+    let output = PathBuf::from(cli.log);
 
-    if output.exists() {
-        loop {
-            let file_name = output.file_stem().unwrap_or_default().to_string_lossy();
-            let new_output = output.with_file_name(format!("{file_name}_{counter}.txt"));
+    // if output.exists() {
+    //     loop {
+    //         let file_name = output.file_stem().unwrap_or_default().to_string_lossy();
+    //         let new_output = output.with_file_name(format!("{file_name}_{counter}.txt"));
 
-            counter += 1;
+    //         counter += 1;
 
-            if !new_output.exists() {
-                output = new_output;
-                break;
-            }
-        }
-    }
+    //         if !new_output.exists() {
+    //             output = new_output;
+    //             break;
+    //         }
+    //     }
+    // }
 
     let pair = Arc::new((
         Mutex::new(State::default()),
         Condvar::new(),
-        Mutex::new(File::create(&output).unwrap()),
+        Mutex::new(
+            OpenOptions::new()
+                .write(true)
+                .create(true)
+                .open(&output)
+                .unwrap(),
+        ),
         Mutex::new((0u64, 0u64)),
     ));
 
@@ -148,6 +154,8 @@ fn main() {
                         OsStr::new("80"),
                         work.1.as_os_str(),
                     ];
+
+                    let metadata = fs::metadata(work.0.as_os_str());
 
                     let input_size = {
                         if let Ok(m) = fs::metadata(work.0.as_os_str()) {
@@ -244,6 +252,29 @@ fn main() {
                             std::fs::remove_file(work.0).unwrap();
 
                             let mut t = pair.3.lock().unwrap();
+
+                            if let Ok(metadata) = metadata {
+                                if let Ok(file) =
+                                    OpenOptions::new().write(true).create(true).open(&work.1)
+                                {
+                                    let mut times = FileTimes::new();
+
+                                    #[cfg(target_os = "windows")]
+                                    if let Ok(t) = metadata.created() {
+                                        times = times.set_created(t);
+                                    }
+                                    if let Ok(t) = metadata.modified() {
+                                        times = times.set_modified(t);
+                                    }
+                                    if let Ok(t) = metadata.accessed() {
+                                        times = times.set_accessed(t);
+                                    }
+
+                                    if let Err(e) = file.set_times(times) {
+                                        eprintln!("Failed to set metadata of file {:?} {e}", work.1)
+                                    }
+                                }
+                            }
 
                             t.0 += input_size;
                             t.1 += output_size;
@@ -363,10 +394,10 @@ struct Cli {
     folder: PathBuf,
 
     /// Core count
-    #[arg(default_value_t = 4, short = 'j')]
+    #[arg(default_value_t = 8, short = 'j')]
     jobs: usize,
 
-    #[arg(default_value_t = 1000, short = 'd')]
+    #[arg(default_value_t = 0, short = 'd')]
     dry: usize,
 
     #[arg(default_value_t = String::from("ffpack.txt"), short = 'l')]

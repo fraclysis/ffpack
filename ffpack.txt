@@ -1,0 +1,17 @@
+Input #0, image2, from 'C:/Users/fraclysis/Desktop/New folder\67170050_p0.jpg':
+  Duration: 00:00:00.04, start: 0.000000, bitrate: 417006 kb/s
+  Stream #0:0: Video: mjpeg (Baseline), yuvj444p(pc, bt470bg/unknown/unknown), 2000x1500 [SAR 350:350 DAR 4:3], 25 fps, 25 tbr, 25 tbn
+Please use -q:a or -q:v, -qscale is ambiguous
+Stream mapping:
+  Stream #0:0 -> #0:0 (mjpeg (native) -> webp (libwebp))
+Press [q] to stop, [?] for help
+[swscaler @ 00000160acd7af00] deprecated pixel format used, make sure you did set range correctly
+Output #0, webp, to 'C:/Users/fraclysis/Desktop/New folder\67170050_p0.webp':
+  Metadata:
+    encoder         : Lavf61.9.100
+  Stream #0:0: Video: webp, bgra(pc, gbr/unknown/unknown, progressive), 2000x1500 [SAR 1:1 DAR 4:3], q=2-31, 200 kb/s, 25 fps, 1k tbn
+    Metadata:
+      encoder         : Lavc61.24.100 libwebp
+[libwebp @ 00000160accf9cc0] Using libwebp for RGB-to-YUV conversion. You may want to consider passing in YUV instead for lossy encoding.
+[out#0/webp @ 00000160acd11e80] video:193KiB audio:0KiB subtitle:0KiB other streams:0KiB global headers:0KiB muxing overhead: 0.000000%
+frame=    1 fps=0.0 q=-0.0 Lsize=     193KiB time=00:00:00.04 bitrate=39490.4kbits/s speed=0.145x    
